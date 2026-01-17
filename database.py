@@ -23,18 +23,15 @@ class DatabaseManager:
             cursor = conn.cursor()
 
             # Таблица недавних файлов
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS recent_files (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     filepath TEXT UNIQUE NOT NULL,
                     opened_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
-            """)
-
-            # Можно добавить другие таблицы здесь, например:
-            # - settings
-            # - sessions
-            # - projects
+            """
+            )
 
             conn.commit()
 
@@ -44,8 +41,12 @@ class DatabaseManager:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
                 # Удаляем старую запись, чтобы обновить время
-                cursor.execute("DELETE FROM recent_files WHERE filepath = ?", (filepath,))
-                cursor.execute("INSERT INTO recent_files (filepath) VALUES (?)", (filepath,))
+                cursor.execute(
+                    "DELETE FROM recent_files WHERE filepath = ?", (filepath,)
+                )
+                cursor.execute(
+                    "INSERT INTO recent_files (filepath) VALUES (?)", (filepath,)
+                )
                 return True
         except sqlite3.Error as e:
             print(f"Database error (add_recent_file): {e}")
@@ -62,11 +63,14 @@ class DatabaseManager:
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("""
+                cursor.execute(
+                    """
                     SELECT filepath FROM recent_files
                     ORDER BY opened_at DESC
                     LIMIT ?
-                """, (limit,))
+                """,
+                    (limit,),
+                )
 
                 for row in cursor.fetchall():
                     filepath = row[0]
@@ -77,8 +81,11 @@ class DatabaseManager:
 
                 # Удаляем "битые" ссылки
                 if to_remove:
-                    placeholders = ','.join('?' * len(to_remove))
-                    cursor.execute(f"DELETE FROM recent_files WHERE filepath IN ({placeholders})", to_remove)
+                    placeholders = ",".join("?" * len(to_remove))
+                    cursor.execute(
+                        f"DELETE FROM recent_files WHERE filepath IN ({placeholders})",
+                        to_remove,
+                    )
 
         except sqlite3.Error as e:
             print(f"Database error (get_recent_files): {e}")

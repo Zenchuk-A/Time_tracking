@@ -219,7 +219,7 @@ class WorkTimeApp(QMainWindow):
 
     def remove_time_entry_row(self, row_widget):
         """Удаляет указанную строку из интерфейса."""
-        if self.time_entries_layout.count() > 1:  # оставляем хотя бы одну
+        if self.time_entries_layout.count() > 1:
             self.time_entries_layout.removeWidget(row_widget)
             row_widget.deleteLater()
         else:
