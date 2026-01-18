@@ -1,2 +1,3 @@
-/WTBase.db
+/WTBase*.db
 /.venv/
+main.spec

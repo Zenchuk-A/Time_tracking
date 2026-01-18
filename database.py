@@ -22,74 +22,44 @@ class DatabaseManager:
         with self.get_connection() as conn:
             cursor = conn.cursor()
 
-            # Таблица недавних файлов
+            # Таблица проектов
             cursor.execute(
                 """
-                CREATE TABLE IF NOT EXISTS recent_files (
+                CREATE TABLE IF NOT EXISTS projects (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    filepath TEXT UNIQUE NOT NULL,
-                    opened_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    project_name TEXT UNIQUE NOT NULL,
+                    created_at   INTEGER DEFAULT (0) 
                 )
-            """
+                """
+            )
+
+            # Таблица биллинга
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS billing (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT UNIQUE NOT NULL,
+                    tracker TEXT DEFAULT LogWork NOT NULL,
+                    started_at INTEGER NOT NULL,
+                    hour_cost  INTEGER NOT NULL DEFAULT (0) 
+                )
+                """
+            )
+
+            # Таблица отработанного времени
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS time_worked (
+                    id INTEGER UNIQUE NOT NULL PRIMARY KEY ASC AUTOINCREMENT,
+                    project INTEGER NOT NULL REFERENCES projects (id) ON DELETE SET NULL ON UPDATE CASCADE,
+                    hours INTEGER NOT NULL DEFAULT (0),
+                    minutes INTEGER NOT NULL DEFAULT (0),
+                    tracker TEXT NOT NULL DEFAULT LogWork,
+                    date INTEGER NOT NULL
+                    )
+                """
             )
 
             conn.commit()
-
-    def add_recent_file(self, filepath: str) -> bool:
-        """Добавляет или обновляет запись о файле в recent_files."""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                # Удаляем старую запись, чтобы обновить время
-                cursor.execute(
-                    "DELETE FROM recent_files WHERE filepath = ?", (filepath,)
-                )
-                cursor.execute(
-                    "INSERT INTO recent_files (filepath) VALUES (?)", (filepath,)
-                )
-                return True
-        except sqlite3.Error as e:
-            print(f"Database error (add_recent_file): {e}")
-            return False
-
-    def get_recent_files(self, limit: int = 10) -> List[str]:
-        """
-        Returns a list of recent_files from the recent_files table.
-        """
-        valid_files = []
-        to_remove = []
-
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute(
-                    """
-                    SELECT filepath FROM recent_files
-                    ORDER BY opened_at DESC
-                    LIMIT ?
-                """,
-                    (limit,),
-                )
-
-                for row in cursor.fetchall():
-                    filepath = row[0]
-                    if os.path.exists(filepath):
-                        valid_files.append(filepath)
-                    else:
-                        to_remove.append(filepath)
-
-                # Удаляем "битые" ссылки
-                if to_remove:
-                    placeholders = ",".join("?" * len(to_remove))
-                    cursor.execute(
-                        f"DELETE FROM recent_files WHERE filepath IN ({placeholders})",
-                        to_remove,
-                    )
-
-        except sqlite3.Error as e:
-            print(f"Database error (get_recent_files): {e}")
-
-        return valid_files
 
     def get_projects(self) -> List[str]:
         """
@@ -259,3 +229,75 @@ class DatabaseManager:
         except sqlite3.Error as e:
             print(f"Database error (get_project_id_by_name): {e}")
             return None
+
+    def add_project(self, project_name: str) -> bool:
+        """Adds a new project to the projects table."""
+        if not project_name.strip():
+            return False
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "INSERT INTO projects (project_name) VALUES (?)",
+                    (project_name.strip(),),
+                )
+                conn.commit()
+                return True
+        except sqlite3.IntegrityError:
+            # UNIQUE constraint failed
+            return False
+        except sqlite3.Error as e:
+            print(f"Database error (add_project): {e}")
+            return False
+
+    def update_project(self, project_id: int, new_name: str) -> bool:
+        """Updates an existing project name."""
+        if not new_name.strip():
+            return False
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "UPDATE projects SET project_name = ? WHERE id = ?",
+                    (new_name.strip(), project_id),
+                )
+                conn.commit()
+                return cursor.rowcount > 0
+        except sqlite3.IntegrityError:
+            # UNIQUE constraint: another project with same name exists
+            return False
+        except sqlite3.Error as e:
+            print(f"Database error (update_project): {e}")
+            return False
+
+    def delete_project(self, project_id: int) -> bool:
+        """
+        Deletes a project by ID.
+        Also deletes associated time_worked records (CASCADE not enabled, so do manually).
+        """
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                # Сначала удаляем записи времени
+                cursor.execute(
+                    "DELETE FROM time_worked WHERE project = ?", (project_id,)
+                )
+                # Затем сам проект
+                cursor.execute("DELETE FROM projects WHERE id = ?", (project_id,))
+                conn.commit()
+                return cursor.rowcount > 0
+        except sqlite3.Error as e:
+            print(f"Database error (delete_project): {e}")
+            return False
+
+    def get_all_projects_with_ids(self) -> List[dict]:
+        """Returns list of {'id': ..., 'name': ...} for all projects."""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT id, project_name FROM projects ORDER BY id")
+                rows = cursor.fetchall()
+                return [{"id": row[0], "name": row[1]} for row in rows]
+        except sqlite3.Error as e:
+            print(f"Database error (get_all_projects_with_ids): {e}")
+            return []

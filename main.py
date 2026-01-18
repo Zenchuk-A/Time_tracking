@@ -1,4 +1,3 @@
-import sqlite3
 import sys
 import os
 from PyQt6.QtWidgets import (
@@ -19,6 +18,7 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QSpinBox,
     QComboBox,
+    QLineEdit,
 )
 from PyQt6.QtGui import QAction, QIcon
 from PyQt6.QtCore import Qt, QDate, QDateTime
@@ -29,6 +29,8 @@ from database import DatabaseManager
 class WorkTimeApp(QMainWindow):
     def __init__(self):
         super().__init__()
+        self.period_report_label = None
+        self.total_cost_label = None
         self.setWindowTitle("Work time tracker")
         self.setMinimumSize(550, 400)
         self.minimumSize()
@@ -45,54 +47,8 @@ class WorkTimeApp(QMainWindow):
         self.create_toolbar()
         self.setStatusBar(QStatusBar(self))
 
-        self.load_recent_files()
         # Create the first tab by default
         self.new_work_day()
-
-    def add_to_recent(self, filepath: str):
-        self.db.add_recent_file(filepath)
-
-    def get_recent_files(self, limit=10):
-        return self.db.get_recent_files(limit)
-
-    def load_recent_files(self):
-        """Добавляет подменю 'Recent Files' в меню File."""
-        recent_files = self.get_recent_files()
-        if not hasattr(self, "_recent_menu"):
-            file_menu = (
-                self.menuBar().actions()[0].menu()
-            )  # Получаем первое меню ("File")
-            file_menu.addSeparator()
-            self._recent_menu = file_menu.addMenu("Recent Files")
-        else:
-            self._recent_menu.clear()
-
-        if recent_files:
-            for filepath in recent_files:
-                action = QAction(filepath, self)
-                action.triggered.connect(
-                    lambda checked, fp=filepath: self.open_file_by_path(fp)
-                )
-                self._recent_menu.addAction(action)
-        else:
-            empty_action = QAction("No recent files", self)
-            empty_action.setEnabled(False)
-            self._recent_menu.addAction(empty_action)
-
-    def open_file_by_path(self, filepath: str):
-        """Открывает файл по заданному пути."""
-        try:
-            with open(filepath, "r", encoding="utf-8") as f:
-                content = f.read()
-            editor = QTextEdit()
-            editor.setPlainText(content)
-            filename = os.path.basename(filepath)
-            self.tabs.addTab(editor, filename)
-            self.tabs.setCurrentWidget(editor)
-            self.add_to_recent(filepath)
-            self.statusBar().showMessage(f"Opened: {filepath}", 2000)
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Could not open file:\n{e}")
 
     def create_menu(self):
         menubar = self.menuBar()
@@ -100,24 +56,24 @@ class WorkTimeApp(QMainWindow):
         # Меню "File"
         file_menu = menubar.addMenu("&Main")
 
-        billing_config = QAction("&Billing config", self)
-        billing_config.setShortcut("Ctrl+B")
-        billing_config.triggered.connect(self.billing_config)
-        file_menu.addAction(billing_config)
-        # new_action = QAction("&New", self)
-        # new_action.setShortcut("Ctrl+N")
-        # new_action.triggered.connect(self.new_file)
-        # file_menu.addAction(new_action)
-        #
-        # open_action = QAction("&Open...", self)
-        # open_action.setShortcut("Ctrl+O")
-        # open_action.triggered.connect(self.open_file)
-        # file_menu.addAction(open_action)
-        #
-        # save_action = QAction("&Save", self)
-        # save_action.setShortcut("Ctrl+S")
-        # save_action.triggered.connect(self.save_file)
-        # file_menu.addAction(save_action)
+        projects_config_menu = QAction("&Projects", self)
+        projects_config_menu.triggered.connect(self.projects_config)
+        file_menu.addAction(projects_config_menu)
+
+        billing_config_menu = QAction("&Billing config", self)
+        billing_config_menu.setShortcut("Ctrl+B")
+        billing_config_menu.triggered.connect(self.billing_config)
+        file_menu.addAction(billing_config_menu)
+
+        new_work_day_menu = QAction("&New work day", self)
+        new_work_day_menu.setShortcut("Ctrl+N")
+        new_work_day_menu.triggered.connect(self.new_work_day)
+        file_menu.addAction(new_work_day_menu)
+
+        period_cost_menu = QAction("&Period cost", self)
+        period_cost_menu.setShortcut("Ctrl+P")
+        period_cost_menu.triggered.connect(self.period_cost)
+        file_menu.addAction(period_cost_menu)
 
         file_menu.addSeparator()
 
@@ -125,7 +81,7 @@ class WorkTimeApp(QMainWindow):
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
 
-        # Меню "Help"
+        # "Help" menu
         help_menu = menubar.addMenu("&Help")
         about_action = QAction("&About", self)
         about_action.triggered.connect(self.show_about)
@@ -136,28 +92,15 @@ class WorkTimeApp(QMainWindow):
         toolbar.setMovable(False)
         self.addToolBar(Qt.ToolBarArea.TopToolBarArea, toolbar)
 
-        # Кнопка "New"
-        new_btn = QAction("New", self)
-        new_btn.setStatusTip("Create a new file")
-        new_btn.triggered.connect(self.new_file)
-        toolbar.addAction(new_btn)
-
-        # Кнопка "Open"
-        open_btn = QAction("Open", self)
-        open_btn.setStatusTip("Open an existing file")
-        open_btn.triggered.connect(self.open_file)
-        toolbar.addAction(open_btn)
-
-        # Кнопка "Save"
-        save_btn = QAction("Save", self)
-        save_btn.setStatusTip("Save the current file")
-        save_btn.triggered.connect(self.save_file)
-        toolbar.addAction(save_btn)
-
         new_work_day_btn = QAction("New work day", self)
         new_work_day_btn.setStatusTip("Create a new work day")
         new_work_day_btn.triggered.connect(self.new_work_day)
         toolbar.addAction(new_work_day_btn)
+
+        period_cost_btn = QAction("Period cost", self)
+        period_cost_btn.setStatusTip("Calculate the cost for a period")
+        period_cost_btn.triggered.connect(self.period_cost)
+        toolbar.addAction(period_cost_btn)
 
     def refresh_billing_tab(self):
         """Refreshes the billing tab by recreating it."""
@@ -178,7 +121,8 @@ class WorkTimeApp(QMainWindow):
             self.billing_entries_layout.removeWidget(row_widget)
             row_widget.deleteLater()
             # Update the billing tab to reflect the new record
-            self.refresh_billing_tab()
+            # self.refresh_billing_tab()
+            self.on_date_changed(self.date_edit.date())
         else:
             QMessageBox.critical(self, "Error", "Failed to save record.")
 
@@ -296,55 +240,12 @@ class WorkTimeApp(QMainWindow):
         index = self.tabs.addTab(scroll, "Billing Config")
         self.tabs.setCurrentIndex(index)
 
-    def new_file(self):
-        editor = QTextEdit()
-        index = self.tabs.addTab(editor, "Untitled")
-        self.tabs.setCurrentIndex(index)
-        editor.setFocus()
-
     def close_tab(self, index):
         widget = self.tabs.widget(index)
         if isinstance(widget, QTextEdit):
             # Здесь можно добавить проверку на сохранение изменений
             pass
         self.tabs.removeTab(index)
-
-    def open_file(self):
-        file_path, _ = QFileDialog.getOpenFileName(
-            self, "Open File", "", "Text Files (*.txt);;All Files (*)"
-        )
-        if file_path:
-            try:
-                with open(file_path, "r", encoding="utf-8") as f:
-                    content = f.read()
-                editor = QTextEdit()
-                editor.setPlainText(content)
-                filename = file_path.split("/")[-1]
-                self.tabs.addTab(editor, filename)
-                self.tabs.setCurrentWidget(editor)
-                self.add_to_recent(file_path)
-                self.statusBar().showMessage(f"Opened: {file_path}", 2000)
-            except Exception as e:
-                QMessageBox.critical(self, "Error", f"Could not open file:\n{e}")
-
-    def save_file(self):
-        current_widget = self.tabs.currentWidget()
-        if not current_widget:
-            return
-
-        file_path, _ = QFileDialog.getSaveFileName(
-            self, "Save File", "", "Text Files (*.txt);;All Files (*)"
-        )
-        if file_path:
-            try:
-                content = current_widget.toPlainText()
-                with open(file_path, "w", encoding="utf-8") as f:
-                    f.write(content)
-                filename = file_path.split("/")[-1]
-                self.tabs.setTabText(self.tabs.currentIndex(), filename)
-                self.statusBar().showMessage(f"Saved: {file_path}", 2000)
-            except Exception as e:
-                QMessageBox.critical(self, "Error", f"Could not save file:\n{e}")
 
     def show_about(self):
         QMessageBox.about(
@@ -414,6 +315,14 @@ class WorkTimeApp(QMainWindow):
         add_button = QPushButton("➕ new tracker or project")
         add_button.clicked.connect(self.add_time_entry_row)
         layout.addWidget(add_button)
+
+        # === Total cost label ===
+        self.total_cost_label = QLabel("Total cost: ₽0.00")
+        self.total_cost_label.setStyleSheet(
+            "font-weight: bold; font-size: 14px; color: gray;"
+        )
+        layout.addWidget(self.total_cost_label)
+
         layout.addStretch()
 
         # Packaging in a scrollable area
@@ -450,6 +359,17 @@ class WorkTimeApp(QMainWindow):
                 self.add_time_entry_row_with_data(rec)
         else:
             self.add_time_entry_row()
+
+        cost = self.calculate_daily_cost()
+        if cost == 0:
+            self.total_cost_label.setStyleSheet(
+                "font-weight: bold; font-size: 14px; color: gray;"
+            )
+        else:
+            self.total_cost_label.setStyleSheet(
+                "font-weight: bold; font-size: 14px; color: #2c6f2e;"
+            )
+        self.total_cost_label.setText(f"Total cost: ₽{cost:.2f}")
 
     def add_time_entry_row_with_data(self, data: dict = None):
         """
@@ -559,7 +479,7 @@ class WorkTimeApp(QMainWindow):
             QMessageBox.information(self, "Success", "Record saved successfully!")
             self.time_entries_layout.removeWidget(row_widget)
             row_widget.deleteLater()
-            self.refresh_current_tab()
+            self.on_date_changed(self.date_edit.date())
         else:
             QMessageBox.critical(self, "Error", "Failed to save record.")
 
@@ -583,7 +503,7 @@ class WorkTimeApp(QMainWindow):
         )
         if success:
             QMessageBox.information(self, "Success", "Record updated successfully!")
-            self.refresh_current_tab()
+            self.on_date_changed(self.date_edit.date())
         else:
             QMessageBox.critical(self, "Error", "Failed to update record.")
 
@@ -601,17 +521,311 @@ class WorkTimeApp(QMainWindow):
                 QMessageBox.information(self, "Success", "Record deleted successfully!")
                 self.time_entries_layout.removeWidget(row_widget)
                 row_widget.deleteLater()
-                self.refresh_current_tab()
+                self.on_date_changed(self.date_edit.date())
             else:
                 QMessageBox.critical(self, "Error", "Failed to delete record.")
 
-    def refresh_current_tab(self):
-        """Обновляет текущую вкладку 'Working hours'."""
+    def calculate_daily_cost(self):
+        """Calculates total cost for the current date based on time entries and billing rates."""
+        date_int = self.date_edit.date().startOfDay().toSecsSinceEpoch()
+        time_records = self.db.get_time_worked_by_date(date_int)
+
+        # Получаем актуальные ставки: {tracker: hour_cost}
+        billing_rates = {}
+        for rec in self.db.get_billing():
+            # Берём самую свежую ставку для каждого трекера (по started_at DESC)
+            tracker = rec["tracker"]
+            if (
+                tracker not in billing_rates
+                or rec["started_at"] > billing_rates[tracker]["started_at"]
+            ):
+                billing_rates[tracker] = rec
+
+        total_cost = 0.0
+        for rec in time_records:
+            tracker = rec["tracker"]
+            hours = rec["hours"] + rec["minutes"] / 60.0
+            rate_record = billing_rates.get(tracker)
+            if rate_record:
+                total_cost += hours * rate_record["hour_cost"]
+
+        return round(total_cost, 2)
+
+    def period_cost(self):
+        """Open a new tab to calculate cost over a selected date range."""
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setSpacing(10)
+        layout.setContentsMargins(15, 15, 15, 15)
+
+        # === Date range selection ===
+        date_range_layout = QHBoxLayout()
+
+        start_label = QLabel("Start:")
+        self.period_start_edit = QDateEdit()
+        self.period_start_edit.setCalendarPopup(True)
+        self.period_start_edit.setDisplayFormat("dd.MM.yyyy")
+
+        end_label = QLabel("End:")
+        self.period_end_edit = QDateEdit()
+        self.period_end_edit.setCalendarPopup(True)
+        self.period_end_edit.setDisplayFormat("dd.MM.yyyy")
+
+        # Set defaults: end = today, start = Monday of previous week
+        today = QDate.currentDate()
+        self.period_end_edit.setDate(today)
+
+        # Find Monday of the previous week:
+        # Go back 7 days to last week, then to its Monday
+        days_since_monday = today.dayOfWeek() - 1  # Monday = 1 → offset = 0
+        last_monday = today.addDays(-days_since_monday)
+        prev_week_monday = last_monday.addDays(-7)
+        self.period_start_edit.setDate(prev_week_monday)
+
+        # Connect to recalculate on change
+        self.period_start_edit.dateChanged.connect(self.update_period_report)
+        self.period_end_edit.dateChanged.connect(self.update_period_report)
+
+        date_range_layout.addWidget(start_label)
+        date_range_layout.addWidget(self.period_start_edit)
+        date_range_layout.addWidget(end_label)
+        date_range_layout.addWidget(self.period_end_edit)
+        date_range_layout.addStretch()
+
+        layout.addLayout(date_range_layout)
+        layout.addSpacing(15)
+
+        # === Report area ===
+        self.period_report_label = QLabel("Select a period to calculate.")
+        self.period_report_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        layout.addWidget(self.period_report_label)
+
+        layout.addStretch()
+
+        scroll.setWidget(content)
+        index = self.tabs.addTab(scroll, "Period Cost")
+        self.tabs.setCurrentIndex(index)
+
+        # Trigger initial calculation
+        self.update_period_report()
+
+    def update_period_report(self):
+        """Recalculates and displays the cost report for the selected period."""
+        start_date = self.period_start_edit.date()
+        end_date = self.period_end_edit.date()
+
+        if start_date > end_date:
+            self.period_report_label.setText(
+                "<b>Error:</b> Start date must be ≤ End date."
+            )
+            return
+
+        # Get all dates in range
+        current = QDate(start_date)
+        total_cost = 0.0
+        daily_lines = []
+
+        # Preload billing rates (most recent per tracker)
+        billing_rates = {}
+        for rec in self.db.get_billing():
+            tracker = rec["tracker"]
+            if (
+                tracker not in billing_rates
+                or rec["started_at"] > billing_rates[tracker]["started_at"]
+            ):
+                billing_rates[tracker] = rec
+
+        while current <= end_date:
+            date_int = current.startOfDay().toSecsSinceEpoch()
+            records = self.db.get_time_worked_by_date(date_int)
+
+            if records:
+                day_total = 0.0
+                day_details = []
+                for rec in records:
+                    hours = rec["hours"] + rec["minutes"] / 60.0
+                    rate_rec = billing_rates.get(rec["tracker"])
+                    cost = hours * rate_rec["hour_cost"] if rate_rec else 0
+                    day_total += cost
+                    proj = rec.get("project_name", "—")
+                    day_details.append(
+                        f"  • {proj} | {rec['tracker']} | {rec['hours']}ч {rec['minutes']}мин → ₽{cost:.2f}"
+                    )
+
+                total_cost += day_total
+                date_str = current.toString("dd.MM.yyyy (ddd)")
+                daily_lines.append(f"<b>{date_str}</b>: ₽{day_total:.2f}")
+                daily_lines.extend(day_details)
+            else:
+                pass
+                # Optional: show empty days
+                # date_str = current.toString("dd.MM.yyyy (ddd)")
+                # daily_lines.append(f"<b>{date_str}</b>: no entries")
+
+            current = current.addDays(1)
+
+        if daily_lines:
+            report = f"<h3>Total cost: ₽{total_cost:.2f}</h3>\n" + "<br>".join(
+                daily_lines
+            )
+        else:
+            report = "<i>No work records found in the selected period.</i>"
+
+        self.period_report_label.setText(report)
+
+    def projects_config(self):
+        """Open a tab to manage projects."""
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setSpacing(10)
+        layout.setContentsMargins(15, 15, 15, 15)
+
+        title_label = QLabel("Projects Management")
+        title_label.setStyleSheet("font-size: 16px; font-weight: bold;")
+        layout.addWidget(title_label)
+
+        # Container for project rows
+        self.projects_entries_layout = QVBoxLayout()
+        self.projects_entries_widget = QWidget()
+        self.projects_entries_widget.setLayout(self.projects_entries_layout)
+
+        # Load existing projects
+        projects = self.db.get_all_projects_with_ids()
+        if projects:
+            for proj in projects:
+                self.add_project_entry_row(proj)
+        else:
+            self.add_project_entry_row(None)  # empty row for new project
+
+        layout.addWidget(self.projects_entries_widget)
+
+        # Add button
+        add_button = QPushButton("➕ Add Project")
+        add_button.clicked.connect(lambda: self.add_project_entry_row(None))
+        layout.addWidget(add_button)
+        layout.addStretch()
+
+        scroll.setWidget(content)
+        index = self.tabs.addTab(scroll, "Projects")
+        self.tabs.setCurrentIndex(index)
+
+    def add_project_entry_row(self, project: dict = None):
+        """Add a row for a new or existing project."""
+        row_widget = QWidget()
+        row_layout = QHBoxLayout(row_widget)
+        row_layout.setContentsMargins(0, 0, 0, 0)
+        row_layout.setSpacing(8)
+
+        name_edit = QLineEdit()
+        if project:
+            name_edit.setText(project["name"])
+        else:
+            name_edit.setPlaceholderText("Enter project name")
+
+        if project is None:
+            # New project → Save button
+            save_btn = QPushButton("💾 Save")
+            save_btn.setFixedSize(70, 30)
+            save_btn.clicked.connect(
+                lambda: self.save_new_project(name_edit.text(), row_widget)
+            )
+            btn_widget = save_btn
+        else:
+            # Existing project → Update & Delete
+            update_btn = QPushButton("🔄")
+            update_btn.setFixedSize(30, 30)
+            update_btn.clicked.connect(
+                lambda: self.update_existing_project(
+                    project["id"], name_edit.text(), row_widget
+                )
+            )
+
+            delete_btn = QPushButton("🗑️")
+            delete_btn.setFixedSize(30, 30)
+            delete_btn.clicked.connect(
+                lambda: self.delete_existing_project(project["id"], row_widget)
+            )
+
+            btn_layout = QHBoxLayout()
+            btn_layout.addWidget(update_btn)
+            btn_layout.addWidget(delete_btn)
+            btn_widget = QWidget()
+            btn_widget.setLayout(btn_layout)
+
+        row_layout.addWidget(name_edit)
+        row_layout.addWidget(btn_widget)
+        row_layout.addStretch()
+
+        self.projects_entries_layout.addWidget(row_widget)
+
+    def save_new_project(self, name: str, row_widget):
+        if not name.strip():
+            QMessageBox.warning(self, "Warning", "Project name cannot be empty.")
+            return
+        success = self.db.add_project(name)
+        if success:
+            QMessageBox.information(self, "Success", "Project added successfully!")
+            self.projects_entries_layout.removeWidget(row_widget)
+            row_widget.deleteLater()
+            # Refresh the entire tab
+            self.refresh_projects_tab()
+        else:
+            QMessageBox.critical(
+                self, "Error", "Failed to add project.\nIt may already exist."
+            )
+
+    def update_existing_project(self, proj_id: int, new_name: str, row_widget):
+        if not new_name.strip():
+            QMessageBox.warning(self, "Warning", "Project name cannot be empty.")
+            return
+        success = self.db.update_project(proj_id, new_name)
+        if success:
+            QMessageBox.information(self, "Success", "Project updated successfully!")
+            self.refresh_projects_tab()
+        else:
+            QMessageBox.critical(
+                self, "Error", "Failed to update project.\nName may already be in use."
+            )
+
+    def delete_existing_project(self, proj_id: int, row_widget):
+        reply = QMessageBox.question(
+            self,
+            "Confirm Deletion",
+            "Are you sure you want to delete this project?\nAll related time records will also be deleted.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            success = self.db.delete_project(proj_id)
+            if success:
+                QMessageBox.information(
+                    self, "Success", "Project deleted successfully!"
+                )
+                self.projects_entries_layout.removeWidget(row_widget)
+                row_widget.deleteLater()
+                # Also refresh combo boxes in other tabs
+                self.refresh_projects_in_combos()
+            else:
+                QMessageBox.critical(self, "Error", "Failed to delete project.")
+
+    def refresh_projects_tab(self):
+        """Recreates the Projects tab to reflect changes."""
         for i in range(self.tabs.count()):
-            if "Working hours" in self.tabs.tabText(i):
+            if self.tabs.tabText(i) == "Projects":
                 self.tabs.removeTab(i)
-                self.new_work_day()
+                self.projects_config()
                 break
+
+    def refresh_projects_in_combos(self):
+        """Optionally reload project lists in open work-day tabs (advanced)."""
+        # For simplicity, we skip dynamic update of other tabs.
+        # In real app, you might emit a signal or store references to combos.
+        pass
 
 
 if __name__ == "__main__":
