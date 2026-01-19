@@ -1,6 +1,8 @@
 import sqlite3
 import os
+import zipfile
 from typing import List, Optional
+from datetime import datetime
 
 
 class DatabaseManager:
@@ -54,7 +56,8 @@ class DatabaseManager:
                     hours INTEGER NOT NULL DEFAULT (0),
                     minutes INTEGER NOT NULL DEFAULT (0),
                     tracker TEXT NOT NULL DEFAULT LogWork,
-                    date INTEGER NOT NULL
+                    date INTEGER NOT NULL,
+                    day_note TEXT
                     )
                 """
             )
@@ -132,7 +135,7 @@ class DatabaseManager:
                 cursor = conn.cursor()
                 cursor.execute(
                     """
-                    SELECT tw.id, tw.hours, tw.minutes, tw.tracker, p.project_name
+                    SELECT tw.id, tw.hours, tw.minutes, tw.tracker, tw.day_note, p.project_name
                     FROM time_worked tw
                     JOIN projects p ON tw.project = p.id
                     WHERE tw.date = ?
@@ -146,7 +149,8 @@ class DatabaseManager:
                         "hours": row[1],
                         "minutes": row[2],
                         "tracker": row[3],
-                        "project_name": row[4],
+                        "day_note": row[4],
+                        "project_name": row[5],
                     }
                     for row in rows
                 ]
@@ -155,7 +159,13 @@ class DatabaseManager:
             return []
 
     def save_time_worked(
-        self, project_id: int, hours: float, minutes: int, tracker: str, date_int: int
+        self,
+        project_id: int,
+        hours: float,
+        minutes: int,
+        tracker: str,
+        date_int: int,
+        day_note: str = "",
     ) -> bool:
         """
         Saves a new time worked entry.
@@ -166,10 +176,10 @@ class DatabaseManager:
                 cursor = conn.cursor()
                 cursor.execute(
                     """
-                    INSERT INTO time_worked (project, hours, minutes, tracker, date)
-                    VALUES (?, ?, ?, ?, ?)
+                    INSERT INTO time_worked (project, hours, minutes, tracker, date, day_note)
+                    VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                    (project_id, hours, minutes, tracker, date_int),
+                    (project_id, hours, minutes, tracker, date_int, day_note),
                 )
                 conn.commit()
                 return True
@@ -178,7 +188,13 @@ class DatabaseManager:
             return False
 
     def update_time_worked(
-        self, entry_id: int, project_id: int, hours: float, minutes: int, tracker: str
+        self,
+        entry_id: int,
+        project_id: int,
+        hours: float,
+        minutes: int,
+        tracker: str,
+        day_note: str = "",
     ) -> bool:
         """
         Updates an existing time worked entry.
@@ -189,10 +205,10 @@ class DatabaseManager:
                 cursor.execute(
                     """
                     UPDATE time_worked
-                    SET project = ?, hours = ?, minutes = ?, tracker = ?
+                    SET project = ?, hours = ?, minutes = ?, tracker = ?, day_note = ?
                     WHERE id = ?
                 """,
-                    (project_id, hours, minutes, tracker, entry_id),
+                    (project_id, hours, minutes, tracker, day_note, entry_id),
                 )
                 conn.commit()
                 return True
@@ -301,3 +317,43 @@ class DatabaseManager:
         except sqlite3.Error as e:
             print(f"Database error (get_all_projects_with_ids): {e}")
             return []
+
+
+def backup_database_to_zip(db_path: str, backup_dir: str = "backups") -> str | None:
+    """
+    Создаёт ZIP-архив с копией SQLite-базы данных.
+
+    :param db_path: Путь к файлу базы данных (например, 'worktime.db')
+    :param backup_dir: Директория для хранения резервных копий
+    :return: Путь к созданному архиву или None при ошибке
+    """
+    if not os.path.exists(db_path):
+        print(f"Ошибка: файл базы {db_path} не найден.")
+        return None
+
+    # Создаём папку для бэкапов, если её нет
+    os.makedirs(backup_dir, exist_ok=True)
+
+    # Генерируем имя архива с временной меткой
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
+    archive_name = f"worktime_backup_{timestamp}.zip"
+    archive_path = os.path.join(backup_dir, archive_name)
+
+    try:
+        with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as zipf:
+            # Добавляем сам файл БД
+            zipf.write(db_path, arcname=os.path.basename(db_path))
+
+            # Опционально: добавляем файл с метаданными
+            meta_content = f"""Backup created at: {datetime.now().isoformat()}
+Database file: {os.path.basename(db_path)}
+Source path: {os.path.abspath(db_path)}
+"""
+            zipf.writestr("backup_info.txt", meta_content)
+
+        print(f"Резервная копия успешно создана: {archive_path}")
+        return archive_path
+
+    except Exception as e:
+        print(f"Ошибка при создании архива: {e}")
+        return None

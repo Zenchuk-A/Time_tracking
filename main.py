@@ -19,11 +19,12 @@ from PyQt6.QtWidgets import (
     QSpinBox,
     QComboBox,
     QLineEdit,
+    QPlainTextEdit,
 )
 from PyQt6.QtGui import QAction, QIcon
 from PyQt6.QtCore import Qt, QDate, QDateTime
 
-from database import DatabaseManager
+from database import DatabaseManager, backup_database_to_zip
 
 
 class WorkTimeApp(QMainWindow):
@@ -74,6 +75,11 @@ class WorkTimeApp(QMainWindow):
         period_cost_menu.setShortcut("Ctrl+P")
         period_cost_menu.triggered.connect(self.period_cost)
         file_menu.addAction(period_cost_menu)
+
+        backup_menu = QAction("&Backup", self)
+        backup_menu.setShortcut("Ctrl+Shift+B")
+        backup_menu.triggered.connect(self.on_backup_action)
+        file_menu.addAction(backup_menu)
 
         file_menu.addSeparator()
 
@@ -408,6 +414,12 @@ class WorkTimeApp(QMainWindow):
         if data and data.get("tracker"):
             tracker_combo.setCurrentText(data["tracker"])
 
+        day_note_edit = QPlainTextEdit()
+        day_note_edit.setPlaceholderText("Note (optional)")
+        day_note_edit.setMaximumHeight(80)
+        if data and data.get("day_note"):
+            day_note_edit.setPlainText(data["day_note"])
+
         row_layout.addWidget(project_combo)
         row_layout.addWidget(hours_spin)
         row_layout.addWidget(minutes_spin)
@@ -426,6 +438,7 @@ class WorkTimeApp(QMainWindow):
                     hours_spin.value(),
                     minutes_spin.value(),
                     tracker_combo.currentText(),
+                    day_note_edit.toPlainText().strip(),
                     row_widget,
                 )
             )
@@ -450,6 +463,7 @@ class WorkTimeApp(QMainWindow):
                     hours_spin.value(),
                     minutes_spin.value(),
                     tracker_combo.currentText(),
+                    day_note_edit.toPlainText().strip(),
                     row_widget,
                 )
             )
@@ -458,9 +472,21 @@ class WorkTimeApp(QMainWindow):
         row_layout.addStretch()
 
         self.time_entries_layout.addWidget(row_widget)
+        note_layout = QHBoxLayout()
+        note_label = QLabel("Note:")
+        note_label.setFixedWidth(40)
+        note_layout.addWidget(note_label)
+        note_layout.addWidget(day_note_edit)
+        self.time_entries_layout.addLayout(note_layout)
 
     def save_new_time_worked_entry(
-        self, project_name: str, hours: int, minutes: int, tracker: str, row_widget
+        self,
+        project_name: str,
+        hours: int,
+        minutes: int,
+        tracker: str,
+        day_note: str,
+        row_widget,
     ):
         """Сохраняет новую запись в БД."""
         # Получаем project_id по имени
@@ -473,7 +499,7 @@ class WorkTimeApp(QMainWindow):
         date_int = self.date_edit.date().startOfDay().toSecsSinceEpoch()
 
         success = self.db.save_time_worked(
-            project_id, hours, minutes, tracker, date_int
+            project_id, hours, minutes, tracker, date_int, day_note
         )
         if success:
             QMessageBox.information(self, "Success", "Record saved successfully!")
@@ -490,6 +516,7 @@ class WorkTimeApp(QMainWindow):
         hours: int,
         minutes: int,
         tracker: str,
+        day_note: str,
         row_widget,
     ):
         """Обновляет существующую запись в БД."""
@@ -499,7 +526,7 @@ class WorkTimeApp(QMainWindow):
             return
 
         success = self.db.update_time_worked(
-            entry_id, project_id, hours, minutes, tracker
+            entry_id, project_id, hours, minutes, tracker, day_note
         )
         if success:
             QMessageBox.information(self, "Success", "Record updated successfully!")
@@ -826,6 +853,14 @@ class WorkTimeApp(QMainWindow):
         # For simplicity, we skip dynamic update of other tabs.
         # In real app, you might emit a signal or store references to combos.
         pass
+
+    def on_backup_action(self):
+        db_path = self.db.db_path
+        archive_path = backup_database_to_zip(db_path)
+        if archive_path:
+            QMessageBox.information(self, "Success", f"Backup saved:\n{archive_path}")
+        else:
+            QMessageBox.critical(self, "Error", "Failed to create backup!")
 
 
 if __name__ == "__main__":
