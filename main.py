@@ -382,6 +382,11 @@ class WorkTimeApp(QMainWindow):
         Adds a row with data from the database or an empty row.
         If data contains an 'id', then it is an existing record.
         """
+        entry_container = QWidget()
+        entry_layout = QVBoxLayout(entry_container)
+        entry_layout.setContentsMargins(0, 0, 0, 0)
+        entry_layout.setSpacing(8)
+
         row_widget = QWidget()
         row_layout = QHBoxLayout(row_widget)
         row_layout.setContentsMargins(0, 0, 0, 0)
@@ -413,12 +418,6 @@ class WorkTimeApp(QMainWindow):
         tracker_combo.setEditable(False)
         if data and data.get("tracker"):
             tracker_combo.setCurrentText(data["tracker"])
-
-        day_note_edit = QPlainTextEdit()
-        day_note_edit.setPlaceholderText("Note (optional)")
-        day_note_edit.setMaximumHeight(80)
-        if data and data.get("day_note"):
-            day_note_edit.setPlainText(data["day_note"])
 
         row_layout.addWidget(project_combo)
         row_layout.addWidget(hours_spin)
@@ -470,14 +469,27 @@ class WorkTimeApp(QMainWindow):
             row_layout.addWidget(save_btn)
 
         row_layout.addStretch()
+        entry_layout.addWidget(row_widget)
 
-        self.time_entries_layout.addWidget(row_widget)
-        note_layout = QHBoxLayout()
         note_label = QLabel("Note:")
         note_label.setFixedWidth(40)
+
+        day_note_edit = QPlainTextEdit()
+        day_note_edit.setPlaceholderText("Note (optional)")
+        day_note_edit.setMaximumHeight(60)
+        day_note_edit.setTabChangesFocus(True)
+        if data and data.get("day_note"):
+            day_note_edit.setPlainText(data["day_note"])
+
+        note_layout = QHBoxLayout()
         note_layout.addWidget(note_label)
         note_layout.addWidget(day_note_edit)
-        self.time_entries_layout.addLayout(note_layout)
+        note_layout.setContentsMargins(0, 0, 0, 0)
+        note_layout.setSpacing(8)
+
+        entry_layout.addLayout(note_layout)
+
+        self.time_entries_layout.addWidget(entry_container)
 
     def save_new_time_worked_entry(
         self,
