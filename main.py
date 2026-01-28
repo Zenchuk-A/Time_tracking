@@ -43,6 +43,7 @@ class WorkTimeApp(QMainWindow):
         super().__init__()
         self.period_report_label = None
         self.total_cost_label = None
+        self.total_time_label = None
         self.setWindowTitle("Work time tracker")
         self.setMinimumSize(550, 400)
         self.minimumSize()
@@ -346,6 +347,12 @@ class WorkTimeApp(QMainWindow):
         layout.addWidget(add_button)
 
         # === Total cost label ===
+        self.total_time_label = QLabel("Total time: 0ч 0м")
+        self.total_time_label.setStyleSheet(
+            "font-weight: bold; font-size: 14px; color: gray;"
+        )
+        layout.addWidget(self.total_time_label)
+
         self.total_cost_label = QLabel("Total cost: ₽0.00")
         self.total_cost_label.setStyleSheet(
             "font-weight: bold; font-size: 14px; color: gray;"
@@ -407,16 +414,25 @@ class WorkTimeApp(QMainWindow):
         else:
             self.add_time_entry_row()
 
-        cost = self.calculate_daily_cost()
+        cost, h, m = self.calculate_daily_cost()
         if cost == 0:
             self.total_cost_label.setStyleSheet(
+                "font-weight: bold; font-size: 14px; color: gray;"
+            )
+            self.total_time_label.setStyleSheet(
                 "font-weight: bold; font-size: 14px; color: gray;"
             )
         else:
             self.total_cost_label.setStyleSheet(
                 "font-weight: bold; font-size: 14px; color: #2c6f2e;"
             )
+
+            self.total_time_label.setStyleSheet(
+                "font-weight: bold; font-size: 14px; color: #2c6f2e;"
+            )
+
         self.total_cost_label.setText(f"Total cost: ₽{cost:.2f}")
+        self.total_time_label.setText(f"Total time: {h}ч {m}м")
 
     def add_time_entry_row_with_data(self, data: dict = None):
         """
@@ -622,14 +638,21 @@ class WorkTimeApp(QMainWindow):
                 billing_rates[tracker] = rec
 
         total_cost = 0.0
+        total_hours = 0
+        total_minutes = 0
+
         for rec in time_records:
             tracker = rec["tracker"]
             hours = rec["hours"] + rec["minutes"] / 60.0
             rate_record = billing_rates.get(tracker)
             if rate_record:
                 total_cost += hours * rate_record["hour_cost"]
+                total_hours += rec["hours"]
+                total_minutes += rec["minutes"]
 
-        return round(total_cost, 2)
+        total_hours += total_minutes // 60
+        total_minutes = total_minutes % 60
+        return round(total_cost, 2), total_hours, total_minutes
 
     def period_cost(self):
         """Open a new tab to calculate cost over a selected date range."""
