@@ -27,6 +27,17 @@ from PyQt6.QtCore import Qt, QDate, QDateTime
 from database import DatabaseManager, backup_database_to_zip
 
 
+def resource_path(relative_path):
+    """Get absolute path to resource, works for dev and for PyInstaller"""
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+
+    return os.path.join(base_path, relative_path)
+
+
 class WorkTimeApp(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -35,6 +46,12 @@ class WorkTimeApp(QMainWindow):
         self.setWindowTitle("Work time tracker")
         self.setMinimumSize(550, 400)
         self.minimumSize()
+
+        icon_path = resource_path("images/main_icon.png")
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
+        else:
+            print(f"Warning: Icon not found at {icon_path}")
 
         self.db = DatabaseManager("WTBase.db")
 
@@ -291,11 +308,17 @@ class WorkTimeApp(QMainWindow):
         self.date_edit.setCalendarPopup(True)
         self.date_edit.setDisplayFormat("dd.MM.yyyy")
 
+        self.date_indicator_label = QLabel("Today")
+        self.date_indicator_label.setStyleSheet("color: green; font-weight: bold;")
+        self.date_indicator_label.setVisible(True)
+
         self.date_edit.dateChanged.connect(self.on_date_changed)
+        self.date_edit.dateChanged.connect(self.update_date_indicator)
 
         date_layout = QHBoxLayout()
         date_layout.addWidget(date_label)
         date_layout.addWidget(self.date_edit)
+        date_layout.addWidget(self.date_indicator_label)
         date_layout.addStretch()
 
         layout.addLayout(date_layout)
@@ -341,6 +364,24 @@ class WorkTimeApp(QMainWindow):
             scroll, "Working hours " + QDate.currentDate().toString("dd.MM.yyyy")
         )
         self.tabs.setCurrentIndex(index)
+
+    def update_date_indicator(self, date: QDate):
+        """Update the date indicator label based on selected date."""
+        current_date = QDate.currentDate()
+
+        if date == current_date:
+            self.date_indicator_label.setText("Today")
+            self.date_indicator_label.setStyleSheet("color: green; font-weight: bold;")
+            self.date_indicator_label.setVisible(True)
+        elif date > current_date:
+            self.date_indicator_label.setText("Future")
+            self.date_indicator_label.setStyleSheet(
+                "color: #800000; font-weight: bold;"
+            )
+            self.date_indicator_label.setVisible(True)
+        else:
+            # Для прошедших дат скрываем индикатор
+            self.date_indicator_label.setVisible(False)
 
     def on_date_changed(self, date: QDate):
         """Updates the tab title and loads data for the selected date."""
@@ -413,8 +454,8 @@ class WorkTimeApp(QMainWindow):
             minutes_spin.setValue(int(data["minutes"]))
 
         tracker_combo = QComboBox()
-        tracker_combo.addItem(QIcon("images/logWork.png"), "LogWork")
-        tracker_combo.addItem(QIcon("images/upWork.png"), "UpWork")
+        tracker_combo.addItem(QIcon(resource_path("images/logWork.png")), "LogWork")
+        tracker_combo.addItem(QIcon(resource_path("images/upWork.png")), "UpWork")
         tracker_combo.setEditable(False)
         if data and data.get("tracker"):
             tracker_combo.setCurrentText(data["tracker"])
@@ -877,6 +918,7 @@ class WorkTimeApp(QMainWindow):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+
     window = WorkTimeApp()
     window.show()
     sys.exit(app.exec())
