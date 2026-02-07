@@ -349,7 +349,7 @@ class WorkTimeApp(QMainWindow):
         # === Total cost label ===
         self.total_time_label = QLabel("Total time: 0ч 0м")
         self.total_time_label.setStyleSheet(
-            "font-weight: bold; font-size: 14px; color: gray;"
+            "font-weight: bold; font-size: 12px; color: gray;"
         )
         layout.addWidget(self.total_time_label)
 
@@ -371,6 +371,7 @@ class WorkTimeApp(QMainWindow):
             scroll, "Working hours " + QDate.currentDate().toString("dd.MM.yyyy")
         )
         self.tabs.setCurrentIndex(index)
+        self.on_date_changed(self.date_edit.date())
 
     def update_date_indicator(self, date: QDate):
         """Update the date indicator label based on selected date."""
@@ -414,13 +415,13 @@ class WorkTimeApp(QMainWindow):
         else:
             self.add_time_entry_row()
 
-        cost, h, m = self.calculate_daily_cost()
+        cost, h, m, rows = self.calculate_daily_cost()
         if cost == 0:
             self.total_cost_label.setStyleSheet(
                 "font-weight: bold; font-size: 14px; color: gray;"
             )
             self.total_time_label.setStyleSheet(
-                "font-weight: bold; font-size: 14px; color: gray;"
+                "font-weight: bold; font-size: 12px; color: gray;"
             )
         else:
             self.total_cost_label.setStyleSheet(
@@ -428,11 +429,25 @@ class WorkTimeApp(QMainWindow):
             )
 
             self.total_time_label.setStyleSheet(
-                "font-weight: bold; font-size: 14px; color: #2c6f2e;"
+                "font-weight: bold; font-size: 12px; color: #2c6f2e;"
             )
 
         self.total_cost_label.setText(f"Total cost: ₽{cost:.2f}")
-        self.total_time_label.setText(f"Total time: {h}ч {m}м")
+        # self.total_time_label.setText(f"Total time: {h}ч {m}м")
+        base_text = f"Total time: {h}ч {m}м"
+
+        if h == 0 and m == 0:
+            self.total_time_label.setText(base_text)
+        else:
+            details = [f"{row['h']}ч {row['m']}м" for row in rows]
+            details_str = ", ".join(details)
+
+            if details_str:
+                full_text = f"{base_text} \n({details_str})"
+            else:
+                full_text = base_text
+
+            self.total_time_label.setText(full_text)
 
     def add_time_entry_row_with_data(self, data: dict = None):
         """
@@ -640,6 +655,7 @@ class WorkTimeApp(QMainWindow):
         total_cost = 0.0
         total_hours = 0
         total_minutes = 0
+        detailed_list = []
 
         for rec in time_records:
             tracker = rec["tracker"]
@@ -649,10 +665,16 @@ class WorkTimeApp(QMainWindow):
                 total_cost += hours * rate_record["hour_cost"]
                 total_hours += rec["hours"]
                 total_minutes += rec["minutes"]
+                detailed_list.append({"h": rec["hours"], "m": rec["minutes"]})
 
         total_hours += total_minutes // 60
         total_minutes = total_minutes % 60
-        return round(total_cost, 2), total_hours, total_minutes
+        return (
+            round(total_cost, 2),
+            total_hours,
+            total_minutes,
+            detailed_list,
+        )
 
     def period_cost(self):
         """Open a new tab to calculate cost over a selected date range."""
@@ -731,6 +753,8 @@ class WorkTimeApp(QMainWindow):
         current = QDate(start_date)
         total_cost = 0.0
         daily_lines = []
+        total_details = {}
+        total_lines = []
 
         # Preload billing rates (most recent per tracker)
         billing_rates = {}
@@ -758,6 +782,22 @@ class WorkTimeApp(QMainWindow):
                     day_details.append(
                         f"  • {proj} | {rec['tracker']} | {rec['hours']}ч {rec['minutes']}мин → ₽{cost:.2f}"
                     )
+                    tracker = rec["tracker"]
+                    if tracker not in total_details:
+                        total_details[tracker] = {
+                            "hours": rec["hours"],
+                            "minutes": rec["minutes"],
+                        }
+                    else:
+                        total_details[tracker]["hours"] += rec["hours"]
+                        total_details[tracker]["minutes"] += rec["minutes"]
+
+                    if total_details[tracker]["minutes"] >= 60:
+                        additional_hours = total_details[tracker]["minutes"] // 60
+                        total_details[tracker]["hours"] += additional_hours
+                        total_details[tracker]["minutes"] = (
+                            total_details[tracker]["minutes"] % 60
+                        )
 
                 total_cost += day_total
                 date_str = current.toString("dd.MM.yyyy (ddd)")
@@ -772,8 +812,15 @@ class WorkTimeApp(QMainWindow):
             current = current.addDays(1)
 
         if daily_lines:
-            report = f"<h3>Total cost: ₽{total_cost:.2f}</h3>\n" + "<br>".join(
-                daily_lines
+            for total_tracker, time_details in total_details.items():
+                total_lines.append(
+                    f"{total_tracker}: {time_details['hours']}ч {time_details['minutes']}мин"
+                )
+            report = (
+                f"<h3>Total cost: ₽{total_cost:.2f}</h3>\n"
+                + "<br>".join(total_lines)
+                + "<br><br>"
+                + "<br>".join(daily_lines)
             )
         else:
             report = "<i>No work records found in the selected period.</i>"
